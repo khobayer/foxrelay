@@ -21,9 +21,22 @@ import { progressLine, setTitle, stopSpinner } from './lib/ui.mjs';
 import * as G from './lib/git.mjs';
 import { PLANNER_SCHEMA, PLANNER_SYSTEM, WORKER_SYSTEM } from './lib/prompts.mjs';
 
-export const VERSION = '2.2.1';
+export const VERSION = '2.2.2';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
+const resumeCmd = (runDir, extra = '') => `relay resume "${runDir}"${extra}`;
+const rollbackCmd = (runDir) => `relay --rollback "${runDir}" --to-round N`;
+const LIMIT_RE = /round limit|time limit/;
+// Milestones still to build. Parked ones wait for the human and don't count.
+const remainingMilestones = (st) => (st.planList || []).filter((m) => m.status !== 'done' && m.status !== 'parked');
+// A run that ended because it hit its round or time limit, not because the goal was reached.
+// Also catches runs saved by 2.2.1 and older, where the planner's DONE on the last round hid the limit.
+function stoppedAtLimit(st) {
+  if (st.phase !== 'done') return false;
+  if (LIMIT_RE.test(st.endReason || '')) return true;
+  return LIMIT_RE.test(st.finalizing || '') && remainingMilestones(st).length > 0;
+}
+const limitText = (st) => (LIMIT_RE.test(st.endReason || '') ? st.endReason : st.finalizing);
 
 // ---------------------------------------------------------------- config
 const DEFAULTS = {
@@ -229,7 +242,7 @@ function writeDocs() {
   fs.writeFileSync(runPath('QUESTIONS.md'), qs.join('\n') + '\n');
 
   const cp = ['# Checkpoints (git HEAD before each engineer round)', '',
-    `Undo back to the state before round N:  node "${SELF}" --rollback "${S.runDir}" --to-round N`, '',
+    `Undo back to the state before round N:  ${rollbackCmd(S.runDir)}`, '',
     ...S.checkpoints.map((c) => `- Round ${c.round} (${c.milestone || '-'}): ${c.head || '(no git)'}${c.dirty ? '  (had uncommitted changes)' : ''}`)];
   fs.writeFileSync(runPath('CHECKPOINTS.md'), cp.join('\n') + '\n');
 }
@@ -243,7 +256,7 @@ function writeSummary() {
   const lines = [
     '# Relay summary', '',
     `- Goal: ${goalFirst} (full text in goal.md)`,
-    `- Result: ${S.endReason || S.phase}`,
+    `- Result: ${S.endReason || S.phase}${stoppedAtLimit(S) ? ` (${remainingMilestones(S).length} milestones left)` : ''}`,
     `- Started: ${new Date(S.createdAt).toLocaleString()}   Finished: ${new Date().toLocaleString()}`,
     `- Work time: ${fmtDuration(S.elapsedMs)}   Engineer rounds: ${S.round}   Reported usage: $${S.totalCost.toFixed(2)} (usage on a Max plan, not a bill)`,
     '',
@@ -258,8 +271,9 @@ function writeSummary() {
     '## Files changed', '', '```', stat || '(none)', '```', '',
     '## Next steps', '',
     '- Run the app and check it yourself, then push.',
-    open.length ? `- Answer the open questions and continue:  node "${SELF}" --resume-run "${S.runDir}"` : null,
-    `- Undo a bad round:  node "${SELF}" --rollback "${S.runDir}" --to-round N   (see CHECKPOINTS.md)`,
+    stoppedAtLimit(S) ? `- Keep going with a higher limit:  ${resumeCmd(S.runDir, ` --rounds ${S.round + 20}`)}` : null,
+    open.length ? `- Answer the open questions and continue:  ${resumeCmd(S.runDir, stoppedAtLimit(S) ? ` --rounds ${S.round + 20} --message-file answers.md` : '')}` : null,
+    `- Undo a bad round:  ${rollbackCmd(S.runDir)}   (see CHECKPOINTS.md)`,
     `- Keep working with the engineer by hand:  claude --resume ${S.worker.id}`,
     `- Ask the planner about the run:  claude --resume ${S.planner.id}`,
   ].filter((l) => l !== null);
@@ -474,7 +488,12 @@ async function phasePlan() {
     S.endReason = S.finalizing;
     return;
   }
-  if (res.status === 'DONE') { S.phase = 'done'; S.endReason = 'Goal finished (planner verified)'; return; }
+  if (res.status === 'DONE') {
+    S.phase = 'done';
+    // On the last round the planner is told to answer DONE. That is a stop at the limit, not a finished goal.
+    S.endReason = S.finalizing && remainingMilestones(S).length ? S.finalizing : 'Goal finished (planner verified)';
+    return;
+  }
   if (res.status === 'BLOCKED') { S.phase = 'blocked'; S.blockReason = res.summary_for_human || res.review; return; }
 
   // CONTINUE
@@ -510,7 +529,7 @@ async function phaseWork() {
     hr(`Prompt for Sonnet  [${header()}]`);
     log(w.prompt);
     const c = (await ask('\n[Enter] run   [a] run + stop asking   [f] feedback to Opus   [s] stop (resume later)  > ')).toLowerCase();
-    if (c === 's') { save(); log(`\nStopped. Resume with:\n  node "${SELF}" --resume-run "${S.runDir}"`); process.exit(0); }
+    if (c === 's') { save(); log(`\nStopped. Resume with:\n  ${resumeCmd(S.runDir)}`); process.exit(0); }
     if (c === 'a') S.confirm = false;
     if (c === 'f') {
       const fb = await ask('Feedback for Opus: ');
@@ -665,7 +684,7 @@ async function phaseBlocked() {
 
   if (!process.stdin.isTTY) {
     save();
-    log(`\nAnswer later and continue with:\n  node "${SELF}" --resume-run "${S.runDir}"`);
+    log(`\nAnswer later and continue with:\n  ${resumeCmd(S.runDir)}`);
     process.exit(2);
   }
   const stopBuzz = startBuzzer(CFG, 'attention');
@@ -679,7 +698,7 @@ async function phaseBlocked() {
   if (guidance.toLowerCase() === 'stop' || (!answers.length && !guidance)) {
     writeDocs();
     save();
-    log(`\nStopped. Continue later with:\n  node "${SELF}" --resume-run "${S.runDir}"`);
+    log(`\nStopped. Continue later with:\n  ${resumeCmd(S.runDir)}`);
     process.exit(0);
   }
   writeDocs();
@@ -692,21 +711,23 @@ async function phaseDone() {
   writeSummary();
   save();
   const open = S.questions.filter((q) => q.status === 'open');
-  hr('Finished');
+  const atLimit = stoppedAtLimit(S);
+  hr(atLimit ? 'Stopped at the limit' : 'Finished');
   showProgress();
-  log(`  ${S.endReason}`);
+  log(`  ${S.endReason}${atLimit ? `, ${remainingMilestones(S).length} milestones left` : ''}`);
   log(`  ${S.round} rounds, ${fmtDuration(S.elapsedMs)} of work, reported usage $${S.totalCost.toFixed(2)}`);
   if (open.length) log(`  ${open.length} open question(s) for you`);
   log(`\n  Read this first: ${runPath('SUMMARY.md')}`);
-  notify(CFG, 'done', 'Relay finished', `${S.endReason}. ${S.round} rounds.${open.length ? ` ${open.length} question(s) for you.` : ''}`);
+  if (atLimit) log(`  Keep going with a higher limit:  ${resumeCmd(S.runDir, ` --rounds ${S.round + 20}`)}`);
+  notify(CFG, 'done', atLimit ? 'Relay stopped at its limit' : 'Relay finished', `${S.endReason}. ${S.round} rounds.${open.length ? ` ${open.length} question(s) for you.` : ''}`);
 
   if (!process.stdin.isTTY) return 'exit';
   const stopBuzz = startBuzzer(CFG, 'done');
   let c = '';
   try {
-    c = (await ask(open.length ? '\n[Enter] finish   [a] answer the open questions and keep going  > ' : '\nPress Enter to finish  > ')).toLowerCase();
+    c = (await ask(open.length && !atLimit ? '\n[Enter] finish   [a] answer the open questions and keep going  > ' : '\nPress Enter to finish  > ')).toLowerCase();
   } finally { stopBuzz(); }
-  if (c === 'a' && open.length) {
+  if (c === 'a' && open.length && !atLimit) {
     const answers = await answerQuestions(open);
     if (answers.length) {
       writeDocs();
@@ -744,7 +765,7 @@ function installSignalHandlers() {
     log('\nStopping (Ctrl+C). Saving state...');
     killTree(currentChild());
     try { tickClock(); save(); } catch { /* best effort */ }
-    log(`Resume later with:\n  node "${SELF}" --resume-run "${S.runDir}"`);
+    log(`Resume later with:\n  ${resumeCmd(S.runDir)}`);
     process.exit(130);
   };
   process.on('SIGINT', stop);
@@ -793,7 +814,7 @@ async function startNew(args) {
   log(`  run dir : ${runDir}`);
   if (!G.isRepo(project)) log('  WARNING: not a git repository. Checkpoints and rollback are off.');
   else if (G.isDirty(project)) log('  WARNING: the project has uncommitted changes. Commit them first so you can tell your changes from the relay\'s.');
-  log(`  resume  : node "${SELF}" --resume-run "${runDir}"`);
+  log(`  resume  : ${resumeCmd(runDir)}`);
 
   const inline = goal.length <= 8000 ? `\n\n${goal.trim()}` : '\n\n(The goal is long. Read the file.)';
   queuePlanner(
@@ -885,12 +906,12 @@ async function status(args) {
     plan: 'planner is reviewing and planning',
     work: `engineer is working on ${st.pendingWork?.milestone || '?'} (${st.pendingWork?.role || '?'})`,
     blocked: 'NEEDS YOU: open questions or a blocker',
-    done: `finished: ${st.endReason || ''}`,
+    done: stoppedAtLimit(st) ? `stopped: ${limitText(st)}, ${remainingMilestones(st).length} milestones left` : `finished: ${st.endReason || ''}`,
   }[st.phase] || st.phase;
   const p = progressLine({ plan: st.planList, round: st.round, maxRounds: st.maxRounds, elapsed: fmtDuration(st.elapsedMs || 0), current: st.lastPlan?.current_milestone });
   const open = (st.questions || []).filter((q) => q.status === 'open').length;
   console.log(`foxrelay status  ${runDir}`);
-  console.log(`  State    : ${st.phase === 'done' ? 'finished' : running ? `RUNNING (last sign of life ${ago(st.heartbeat)} ago)` : `NOT RUNNING (stopped ${ago(st.heartbeat)} ago)`}`);
+  console.log(`  State    : ${st.phase === 'done' ? (stoppedAtLimit(st) ? 'STOPPED AT LIMIT (not finished)' : 'finished') : running ? `RUNNING (last sign of life ${ago(st.heartbeat)} ago)` : `NOT RUNNING (stopped ${ago(st.heartbeat)} ago)`}`);
   console.log(`  Doing    : ${phaseText}`);
   console.log(`  ${p.text}`);
   console.log(`  Usage    : $${(st.totalCost || 0).toFixed(2)} reported (usage on a Max plan, not a bill)`);
@@ -900,7 +921,8 @@ async function status(args) {
     const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').slice(-6);
     console.log(`  Last log lines:\n${lines.map((l) => `    ${l.slice(0, 150)}`).join('\n')}`);
   }
-  if (!running && st.phase !== 'done') console.log(`\n  Continue with:  node "${SELF}" --resume-run "${runDir}"`);
+  if (!running && st.phase !== 'done') console.log(`\n  Continue with:  ${resumeCmd(runDir)}`);
+  if (stoppedAtLimit(st)) console.log(`\n  Continue with:  ${resumeCmd(runDir, ` --rounds ${st.round + 20}`)}`);
   if (st.phase === 'done') console.log(`\n  Read: ${path.join(runDir, 'SUMMARY.md')}`);
 }
 
@@ -927,6 +949,18 @@ async function resumeRun(args) {
   stopLeftoverChild();
   log(`  phase: ${S.phase}, rounds done: ${S.round}${S.pendingWork?.attempted && !args.messageFile ? ', an engineer task was interrupted and will continue (not restart)' : ''}`);
 
+  // A run that stopped at its round or time limit can go on, once the limit is raised with --rounds or --hours.
+  const limitStop = stoppedAtLimit(S);
+  if (limitStop) {
+    const moreRounds = args.rounds && args.rounds > S.round;
+    const moreHours = args.hours && S.elapsedMs < args.hours * 3600 * 1000;
+    if (!moreRounds && !moreHours) {
+      log(`  This run stopped at its limit (${limitText(S)}) with ${remainingMilestones(S).length} milestones left. To keep going, raise the limit, for example:\n  ${resumeCmd(runDir, ` --rounds ${S.round + 20}${args.messageFile ? ` --message-file "${args.messageFile}"` : ''}`)}`);
+      return;
+    }
+  }
+  const limitNote = limitStop ? `The human raised the limit (now ${S.maxRounds} rounds${S.maxHours ? `, ${S.maxHours}h` : ''}). Continue with the remaining milestones in PLAN.md.` : '';
+
   // A message from the human (corrections, new answers, guidance), read from a file so it can be any length.
   if (args.messageFile) {
     const text = fs.readFileSync(path.resolve(args.messageFile), 'utf8').trim();
@@ -938,6 +972,7 @@ async function resumeRun(args) {
         : '\n\nYour last prompt was NOT sent to the engineer. Rewrite it if this message changes anything.';
       S.pendingWork = null;
     }
+    if (limitNote) note += `\n\n${limitNote}`;
     const closed = S.questions.filter((q) => q.status === 'open');
     for (const q of closed) { q.status = 'answered'; q.answer = `answered in ${path.basename(args.messageFile)}`; }
     writeDocs();
@@ -948,22 +983,13 @@ async function resumeRun(args) {
     queuePlanner(`HUMAN MESSAGE (this replaces any earlier answer it mentions):\n\n${text}${note}\n\nUpdate the plan and continue.`);
     save();
     log(`  Your message from ${args.messageFile} goes to the planner first.`);
-  }
-  // A run that stopped at its round or time limit can go on: raise the limit with --rounds or --hours.
-  const limitStop = S.phase === 'done' && /round limit|time limit/.test(S.endReason || '');
-  if (limitStop && !args.messageFile) {
-    const moreRounds = args.rounds && args.rounds > S.round;
-    const moreHours = args.hours && S.elapsedMs < args.hours * 3600 * 1000;
-    if (moreRounds || moreHours) {
-      S.finalizing = null;
-      S.endReason = null;
-      queuePlanner(`The human raised the limit (now ${S.maxRounds} rounds${S.maxHours ? `, ${S.maxHours}h` : ''}). Continue with the remaining milestones in PLAN.md.`);
-      save();
-      log(`  Continuing: limit raised to ${S.maxRounds} rounds${S.maxHours ? `, ${S.maxHours}h` : ''}.`);
-    } else {
-      log(`  This run stopped at its limit (${S.round} rounds). To keep going, raise it, for example:\n  node "${SELF}" --resume-run "${runDir}" --rounds ${S.round + 20}`);
-      return;
-    }
+    if (limitStop) log(`  Continuing: limit raised to ${S.maxRounds} rounds${S.maxHours ? `, ${S.maxHours}h` : ''}.`);
+  } else if (limitStop) {
+    S.finalizing = null;
+    S.endReason = null;
+    queuePlanner(limitNote);
+    save();
+    log(`  Continuing: limit raised to ${S.maxRounds} rounds${S.maxHours ? `, ${S.maxHours}h` : ''}.`);
   }
   if (S.phase === 'done') {
     const open = S.questions.filter((q) => q.status === 'open');
@@ -1010,7 +1036,7 @@ async function rollback(args) {
   queuePlanner(`The human rolled the project back to the state before round ${n} (commit ${cp.head.slice(0, 8)}). Everything the engineer did from round ${n} on is gone. Re-check the project, update the plan, and continue.`);
   writeDocs();
   save();
-  log(`Done. Continue the run with:\n  node "${SELF}" --resume-run "${runDir}"`);
+  log(`Done. Continue the run with:\n  ${resumeCmd(runDir)}`);
 }
 
 async function testNotify(args) {
@@ -1038,7 +1064,7 @@ main(args).then(() => process.exit(0)).catch((e) => {
   console.error(`\nError: ${e.message}`);
   if (S?.runDir) {
     try { save(); } catch { /* ignore */ }
-    console.error(`State saved. After fixing the problem, continue with:\n  node "${SELF}" --resume-run "${S.runDir}"`);
+    console.error(`State saved. After fixing the problem, continue with:\n  ${resumeCmd(S.runDir)}`);
   }
   process.exit(1);
 });

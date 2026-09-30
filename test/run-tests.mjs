@@ -244,6 +244,41 @@ test('a run stopped at the round limit continues with a higher --rounds', async 
   assert.ok(fs.readFileSync(path.join(runDirOf(ctx), 'SUMMARY.md'), 'utf8').includes('Goal finished'));
 });
 
+test('DONE on the last round with milestones left is a limit stop, not a finished goal (also for old runs)', async () => {
+  const lastDone = { ...P('M1', 'DONE'), plan: M('done', 'todo') };
+  const ctx = setup('limitdone', {
+    opus: [{ ok: P('M1') }, { ok: P('M1') }, { ok: lastDone }, { ok: P('M2') }, { ok: { ...P('M2', 'DONE'), plan: M('done', 'done') } }],
+    sonnet: [W('a.txt'), W('b.txt'), W('c.txt')],
+  });
+  const r1 = await relay(ctx, ['--goal', 'x', '--rounds', '2']);
+  assert.equal(r1.code, 0, r1.out);
+  assert.match(state(ctx).endReason, /round limit/);
+  assert.ok(r1.out.includes('Stopped at the limit') && r1.out.includes('1 milestones left'), r1.out);
+  const sum = fs.readFileSync(path.join(runDirOf(ctx), 'SUMMARY.md'), 'utf8');
+  assert.ok(!sum.includes('Goal finished') && sum.includes('--rounds 22'), sum);
+  // A run saved by 2.2.1 or older: DONE hid the limit in endReason, but finalizing kept it.
+  const sp = path.join(runDirOf(ctx), 'state.json');
+  fs.writeFileSync(sp, JSON.stringify({ ...state(ctx), endReason: 'Goal finished (planner verified)' }));
+  const cmd = (a) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [RELAY, ...a], { cwd: ctx.project, env: ctx.env });
+    let out = ''; c.stdout.on('data', (d) => { out += d; }); c.stderr.on('data', (d) => { out += d; }); c.on('close', (code) => resolve({ code, out }));
+  });
+  const st = await cmd(['status']);
+  assert.ok(st.out.includes('STOPPED AT LIMIT') && st.out.includes('1 milestones left') && st.out.includes('--rounds 22'), st.out);
+  const r2 = await cmd(['resume', '--config', CONFIG]);
+  assert.ok(r2.out.includes('raise the limit') && r2.out.includes('--rounds 22'), r2.out);
+  assert.equal(calls(ctx, 'sonnet').length, 2, 'nothing ran without a higher limit');
+  const msg = path.join(ctx.root, 'answers.md');
+  fs.writeFileSync(msg, 'Q1: use the default.');
+  const r3 = await cmd(['resume', '--config', CONFIG, '--rounds', '10', '--message-file', msg]);
+  assert.equal(r3.code, 0, r3.out);
+  assert.ok(r3.out.includes('limit raised to 10'), r3.out);
+  const o = calls(ctx, 'opus');
+  assert.ok(o[3].input.includes('Q1: use the default.') && o[3].input.includes('raised the limit'), 'message and limit note reach the planner together');
+  assert.equal(calls(ctx, 'sonnet').length, 3, 'did more work after raising the limit');
+  assert.equal(state(ctx).endReason, 'Goal finished (planner verified)');
+});
+
 test('rollback: resets git to before round N and queues the planner', async () => {
   const ctx = setup('rollback', {
     opus: [{ ok: P('M1') }, { ok: P('M1') }, { ok: P('M1', 'DONE') }],

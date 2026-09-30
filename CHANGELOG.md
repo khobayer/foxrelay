@@ -2,6 +2,13 @@
 
 Check your version with `relay --version`.
 
+## 2.2.2 (30 Sep 2026)
+
+- Fix: a run that hit its round or time limit was reported as "Goal finished (planner verified)", because the planner is told to answer DONE on the last round. It now says "Stopped at the round limit" with the number of milestones left, in the terminal, in `relay status` and in SUMMARY.md.
+- Fix: `relay resume --rounds N` now continues such a run, including runs saved by 2.2.1 and older.
+- `relay resume --rounds N --message-file answers.md` answers the open questions and raises the limit in one step. Resuming a limit-stopped run without a higher limit tells you the exact command instead of doing nothing.
+- Hints in the terminal and SUMMARY.md now use the short `relay resume` and `relay --rollback` commands.
+
 ## 2.2.1 (30 Sep 2026)
 
 - New name: **FoxRelay** (was claude-relay). The command is still `relay`, and `foxrelay` works too. Project files (`docs/relay/`, `.relay/`) are unchanged, so existing projects and runs keep working.

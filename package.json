@@ -1,6 +1,6 @@
 {
   "name": "foxrelay",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Unattended build loop for Claude Code: Opus plans and reviews, Sonnet implements, until the goal is done. Survives internet drops, usage limits, laptop sleep and crashes.",
   "type": "module",
   "bin": {
