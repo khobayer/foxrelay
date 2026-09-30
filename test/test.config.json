@@ -1,0 +1,13 @@
+{
+  "rulesFile": "../rules.md",
+  "workerAllowedTools": [],
+  "timeoutMinutes": 1,
+  "recovery": {
+    "netPollSeconds": 1,
+    "limitPollMinutes": 0.02,
+    "otherErrorPollSeconds": 1,
+    "probeTimeoutSeconds": 10,
+    "maxWaitHours": 0.05
+  },
+  "notify": { "sound": false, "desktop": false, "buzzUntilAck": false }
+}

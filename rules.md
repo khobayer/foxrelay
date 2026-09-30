@@ -1,0 +1,9 @@
+- Follow the existing code patterns and folder structure. No refactors of working code unless a requirement needs it.
+- Commit after each finished step. One short commit message line, written the way a person would say it.
+- Never add "Co-Authored-By" or "Generated with" lines to commits.
+- Never push, never create or move tags, never rewrite history. The human reviews and pushes after the run.
+- Never edit or delete existing database migrations. Add new ones only.
+- Never read, print or copy secrets from .env files. Scripts load them by themselves.
+- Never start dev servers, watchers or anything that keeps running. Use commands that exit.
+- Run the build and the relevant tests before reporting a step as done, and report the real output.
+- If you take a non-obvious shortcut, add a one-line comment explaining why.

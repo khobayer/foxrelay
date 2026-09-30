@@ -1,0 +1,39 @@
+{
+  "name": "foxrelay",
+  "version": "2.2.1",
+  "description": "Unattended build loop for Claude Code: Opus plans and reviews, Sonnet implements, until the goal is done. Survives internet drops, usage limits, laptop sleep and crashes.",
+  "type": "module",
+  "bin": {
+    "relay": "relay.mjs",
+    "foxrelay": "relay.mjs"
+  },
+  "files": [
+    "relay.mjs",
+    "relay.cmd",
+    "lib/",
+    "relay.config.json",
+    "rules.md",
+    "goal.example.md",
+    "README.md",
+    "GUIDE.md",
+    "GUIDE.bn.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/run-tests.mjs"
+  },
+  "keywords": [
+    "foxrelay",
+    "claude-code",
+    "automation",
+    "coding-agent",
+    "ai",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "Md. Khobayer Khan (Delta Fox Technology)"
+}

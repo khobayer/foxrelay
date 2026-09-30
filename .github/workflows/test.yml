@@ -1,0 +1,21 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check
+        run: for f in relay.mjs lib/*.mjs test/*.mjs; do node --check "$f"; done
+      - name: Scenario tests (fake claude, no API calls)
+        run: node test/run-tests.mjs
