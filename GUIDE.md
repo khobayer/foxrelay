@@ -71,12 +71,12 @@ relay
 
 Keep the first runs small, for example `relay --rounds 8`, and read `DECISIONS.md` afterwards. Once you trust its decisions, give it bigger work. Add `--confirm` to see every prompt before it's sent.
 
-While it runs you see:
+While it runs, a footer stays pinned to the bottom of the terminal:
 ```
-Progress [######------------------] 25%  3/12 milestones  |  now: M4  |  round 7/40  |  1h10m
-/ Sonnet working on M4  2:13  Edit src/app/devices/page.tsx
+ FOXRELAY  █████░░░░░░░░░░░░░░░ 25%  3/12 milestones │ now M4 │ round 7/40 │ 1h10m
+  ·■·· Sonnet working on M4  2:13  Edit src/app/devices/page.tsx
 ```
-The terminal title shows the percentage too.
+The output above it is in color, and the terminal title shows the percentage too. If colors look wrong in your terminal, set `RELAY_PLAIN=1`.
 
 **Check on it from another terminal** (or after coming back):
 ```powershell

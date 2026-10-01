@@ -2,6 +2,13 @@
 
 Check your version with `relay --version`.
 
+## 2.2.3 (1 Oct 2026)
+
+- Usage limit: the relay now checks every `limitPollMinutes` (default 10) instead of sleeping until the reset time. If usage comes back early (extra usage, a plan change, another account), the run continues within minutes.
+- Fix: the work clock counted at most 5 minutes per round, so a 40-minute round showed as 5 minutes and `--hours` limits fired far too late. It now counts the full time and still leaves out laptop sleep.
+- Faster rounds: the engineer runs only the tests for what it changed while working, and the full suite and build once before its last commit, unless the project rules say otherwise.
+- New look: colored output (section headers, Opus and Sonnet lines, warnings in yellow, success in green) and a footer pinned to the bottom of the terminal that always shows the progress bar, percentage, current milestone, round, work time and what is happening right now. The footer hides while you type an answer. `RELAY_PLAIN=1` or `NO_COLOR=1` turns colors off. The log file stays plain text.
+
 ## 2.2.2 (30 Sep 2026)
 
 - Fix: a run that hit its round or time limit was reported as "Goal finished (planner verified)", because the planner is told to answer DONE on the last round. It now says "Stopped at the round limit" with the number of milestones left, in the terminal, in `relay status` and in SUMMARY.md.

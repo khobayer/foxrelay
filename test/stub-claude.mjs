@@ -46,7 +46,7 @@ function main() {
     const lim = readJson(path.join(DIR, 'limit.json'), { n: 0 });
     if (lim.n > 0) {
       lim.n--; fs.writeFileSync(path.join(DIR, 'limit.json'), JSON.stringify(lim));
-      out({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached. Please try again later.', session_id: 'x' });
+      out({ type: 'result', subtype: 'success', is_error: true, result: lim.text || 'Claude AI usage limit reached. Please try again later.', session_id: 'x' });
       process.exit(1);
     }
     out({ type: 'result', subtype: 'success', is_error: false, result: 'OK', session_id: 'probe' });
@@ -81,8 +81,8 @@ function main() {
   }
   if (step.fail === 'limit') {
     if (step.record) record(sid, input);
-    fs.writeFileSync(path.join(DIR, 'limit.json'), JSON.stringify({ n: step.times || 1 }));
-    out({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached.', session_id: sid });
+    fs.writeFileSync(path.join(DIR, 'limit.json'), JSON.stringify({ n: step.times || 1, text: step.text }));
+    out({ type: 'result', subtype: 'success', is_error: true, result: step.text || 'Claude AI usage limit reached.', session_id: sid });
     process.exit(1);
   }
   if (step.hang) {

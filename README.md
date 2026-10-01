@@ -74,12 +74,14 @@ relay status                           # from any terminal: progress and what it
 relay resume                           # after a crash, Ctrl+C or "needs you"
 ```
 
-While it runs you see a live progress line and a spinner, and the terminal title shows the percentage:
+While it runs, the output is in color and a footer stays pinned to the bottom of the terminal with the progress bar and what is happening right now. The terminal title shows the percentage too:
 
 ```
-Progress [##########--------------] 42%  5/12 milestones  |  now: M6  |  round 14/100  |  2h05m
-/ Sonnet working on M6  3:41  Edit src/app/devices/page.tsx
+ FOXRELAY  ████████░░░░░░░░░░░░ 42%  5/12 milestones │ now M6 │ round 14/100 │ 2h05m
+  ·■·· Sonnet working on M6  3:41  Edit src/app/devices/page.tsx
 ```
+
+`RELAY_PLAIN=1` (or `NO_COLOR=1`) gives plain text without colors. `RELAY_NO_SPINNER=1` turns off all live drawing.
 
 The percentage counts finished milestones. The planner can add milestones as it learns more about the project, so it can move backwards a little.
 

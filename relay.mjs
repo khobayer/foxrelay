@@ -17,11 +17,11 @@ import {
 } from './lib/claude.mjs';
 import { waitUntilAvailable } from './lib/net.mjs';
 import { notify, startBuzzer, setNotifyDebug } from './lib/notify.mjs';
-import { progressLine, setTitle, stopSpinner } from './lib/ui.mjs';
+import { progressLine, setTitle, stopSpinner, enableFooter, suspendFooter, resumeFooter, closeFooter } from './lib/ui.mjs';
 import * as G from './lib/git.mjs';
 import { PLANNER_SCHEMA, PLANNER_SYSTEM, WORKER_SYSTEM } from './lib/prompts.mjs';
 
-export const VERSION = '2.2.2';
+export const VERSION = '2.2.3';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
 const resumeCmd = (runDir, extra = '') => `relay resume "${runDir}"${extra}`;
@@ -175,7 +175,17 @@ function save() {
 
 // Saves every 30s even while Claude is busy, so "relay status" can tell a live run from a dead one.
 function startHeartbeat() {
-  setInterval(() => { try { save(); } catch { /* ignore */ } }, 30 * 1000).unref();
+  // Ticking here (not only between phases) makes the work clock count long rounds fully. A gap over 5 minutes
+  // between ticks means the laptop slept, and only 5 minutes of it count.
+  setInterval(() => { try { tickClock(); save(); } catch { /* ignore */ } }, 30 * 1000).unref();
+}
+
+// What the pinned footer shows. Read on every redraw.
+function footerSource() {
+  return {
+    plan: S.planList, round: S.round, maxRounds: S.maxRounds, current: S.lastPlan?.current_milestone, phase: S.phase,
+    elapsedMs: S.elapsedMs + Math.min(Date.now() - (S.lastTick || Date.now()), 5 * 60 * 1000),
+  };
 }
 
 function showProgress() {
@@ -296,6 +306,7 @@ function stopLeftoverChild() {
 // Asks one question. Lines that arrive within a moment of each other (a paste) count as ONE answer,
 // so a multi-line paste can't spill into the next question.
 function ask(q) {
+  suspendFooter();
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const lines = [];
@@ -304,7 +315,7 @@ function ask(q) {
     rl.on('line', (line) => {
       lines.push(line);
       clearTimeout(timer);
-      timer = setTimeout(() => { rl.close(); resolve(lines.join('\n').trim()); }, 300);
+      timer = setTimeout(() => { rl.close(); resumeFooter(); resolve(lines.join('\n').trim()); }, 300);
     });
     rl.setPrompt(q);
     rl.prompt();
@@ -825,6 +836,7 @@ async function startNew(args) {
   save();
   installSignalHandlers();
   startHeartbeat();
+  enableFooter(footerSource);
   await loop();
 }
 
@@ -997,6 +1009,7 @@ async function resumeRun(args) {
   }
   installSignalHandlers();
   startHeartbeat();
+  enableFooter(footerSource);
   await loop();
 }
 
@@ -1060,7 +1073,7 @@ const main = args.testNotify ? testNotify
   : (args.cmd === 'resume' || args.resumeRun || args.resumeLast) ? resumeRun
   : startNew;
 main(args).then(() => process.exit(0)).catch((e) => {
-  stopSpinner();
+  closeFooter();
   console.error(`\nError: ${e.message}`);
   if (S?.runDir) {
     try { save(); } catch { /* ignore */ }

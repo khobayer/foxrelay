@@ -145,6 +145,19 @@ test('usage limit: waits and continues by itself', async () => {
   assert.ok(calls(ctx, 'sonnet')[1].input.startsWith('[relay-continue]'));
 });
 
+test('usage limit with a far reset time: keeps checking and continues as soon as it is back', async () => {
+  const ctx = setup('limitearly', {
+    opus: [{ ok: P('M1') }, { ok: P('M1', 'DONE') }],
+    sonnet: [{ fail: 'limit', times: 2, record: true, text: "You've hit your session limit · resets 11:59pm" }, W('a.txt')],
+  });
+  const t0 = Date.now();
+  const r = await relay(ctx, ['--goal', 'x']);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(r.out.includes('Checking every'), r.out);
+  assert.ok(Date.now() - t0 < 30000, 'did not sleep until the reset time');
+  assert.ok(calls(ctx, 'sonnet')[1].input.startsWith('[relay-continue]'));
+});
+
 test('relay killed mid-task (crash / closed terminal): --resume-run continues the task', async () => {
   const ctx = setup('crash', {
     opus: [{ ok: P('M1') }, { ok: P('M1', 'DONE') }],
@@ -472,6 +485,8 @@ sys.exit(os.waitstatus_to_exitcode(status))
   assert.equal(r.code, 0, r.out);
   const o = calls(ctx, 'opus');
   assert.ok(o[1].input.includes('HUMAN ANSWERS') && o[1].input.includes('Postgres'), 'answer reached the planner');
+  assert.ok(r.out.includes('FOXRELAY') && r.out.includes('\x1b[') && r.out.includes('milestones'), 'colored output and the pinned footer are drawn in a terminal');
+  assert.ok(!fs.readFileSync(path.join(runDirOf(ctx), 'relay.log'), 'utf8').includes('\x1b['), 'the log file stays plain text');
   assert.ok(o[1].input.includes('Postgres\nwith pgvector'), 'a two-line paste stayed one answer');
   assert.ok(fs.readFileSync(path.join(runDirOf(ctx), 'QUESTIONS.md'), 'utf8').includes('Answer: Postgres'));
 });

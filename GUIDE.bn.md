@@ -73,12 +73,12 @@ relay
 
 প্রথম কয়েকবার ছোট রাখুন, যেমন `relay --rounds 8`, আর পরে `DECISIONS.md` পড়ে দেখুন। Opus-এর সিদ্ধান্তে ভরসা হলে বড় কাজ দিন। প্রতিটা prompt পাঠানোর আগে নিজে দেখতে চাইলে `--confirm` যোগ করুন।
 
-চলার সময় terminal-এ এরকম দেখাবে:
+চলার সময় terminal-এর একদম নিচে একটা footer সবসময় দেখা যাবে:
 ```
-Progress [######------------------] 25%  3/12 milestones  |  now: M4  |  round 7/40  |  1h10m
-/ Sonnet working on M4  2:13  Edit src/app/devices/page.tsx
+ FOXRELAY  █████░░░░░░░░░░░░░░░ 25%  3/12 milestones │ now M4 │ round 7/40 │ 1h10m
+  ·■·· Sonnet working on M4  2:13  Edit src/app/devices/page.tsx
 ```
-Terminal-এর title-এও percentage দেখা যাবে।
+উপরের লেখাগুলো রঙিন থাকবে, আর terminal-এর title-এও percentage দেখা যাবে। কোনো terminal-এ রং ঠিকমতো না এলে `RELAY_PLAIN=1` দিন।
 
 **অন্য terminal থেকে বা ফিরে এসে অবস্থা দেখতে:**
 ```powershell
